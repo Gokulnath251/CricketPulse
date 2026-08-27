@@ -7,7 +7,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🏏 CricketPulse")
+st.title("🏏 CricketPulse 🏏")
 st.subheader("Real-Time Cricket Intelligence")
 
 st.write(
