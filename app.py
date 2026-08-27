@@ -1,8 +1,9 @@
 import streamlit as st
 import requests
 
+
 # ==========================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ==========================================
 
 st.set_page_config(
@@ -11,11 +12,13 @@ st.set_page_config(
     layout="wide"
 )
 
+
 # ==========================================
 # HEADER
 # ==========================================
 
 st.title("🏏 CricketPulse")
+
 st.subheader("Real-Time Cricket Intelligence")
 
 st.write(
@@ -25,22 +28,27 @@ st.write(
 
 st.divider()
 
+
 # ==========================================
-# API KEY
+# API FUNCTION
+# Cached for 60 seconds to reduce API calls
 # ==========================================
 
-try:
-    api_key = st.secrets["CRICLIVE_API_KEY"]
+@st.cache_data(ttl=60)
+def get_live_matches(api_key):
 
-except Exception:
-    st.error(
-        "❌ CRICLIVE_API_KEY is missing from Streamlit Secrets."
+    url = "https://cricketliveapi.com/api/v1/cricket/live"
+
+    response = requests.get(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}"
+        },
+        timeout=10
     )
-    st.stop()
 
-headers = {
-    "Authorization": f"Bearer {api_key}"
-}
+    return response.status_code, response.json()
+
 
 # ==========================================
 # LIVE MATCHES
@@ -48,218 +56,184 @@ headers = {
 
 st.header("🔴 Live Matches")
 
+
 try:
 
-    response = requests.get(
-        "https://cricketliveapi.com/api/v1/cricket/matches/live",
-        headers=headers,
-        timeout=10
-    )
+    api_key = st.secrets["CRICLIVE_API_KEY"]
+
+    status_code, data = get_live_matches(api_key)
 
     # --------------------------------------
-    # CHECK API STATUS
+    # API ERROR
     # --------------------------------------
 
-    if response.status_code != 200:
-
-        st.error(
-            f"❌ API Error: {response.status_code}"
-        )
-
-        st.stop()
-
-    # --------------------------------------
-    # READ RESPONSE
-    # --------------------------------------
-
-    data = response.json()
-
-    # TEMPORARY DEBUG INFORMATION
-    with st.expander("🔍 API Debug Information"):
-
-        st.write("API Status:", response.status_code)
-
-        st.write(
-            "Response keys:",
-            list(data.keys()) if isinstance(data, dict) else "Not a dictionary"
-        )
-
-        st.json(data)
-
-    # --------------------------------------
-    # GET MATCHES
-    # --------------------------------------
-
-    matches = data.get("data", [])
-
-    if not matches:
+    if status_code == 429:
 
         st.warning(
-            "No matches available right now."
+            "⚠️ CricLive API limit has been reached. "
+            "The app is waiting for the API limit to reset."
         )
 
-        st.info(
-            "The CricLive API is connected, "
-            "but it currently returned no matches."
-        )
-
-        st.stop()
-
-    # --------------------------------------
-    # SUCCESS
-    # --------------------------------------
-
-    st.success(
-        f"🟢 Live data updated — "
-        f"{len(matches)} matches found"
-    )
-
-    # ======================================
-    # MATCH CARDS
-    # ======================================
-
-    for match in matches:
-
-        # ----------------------------------
-        # MATCH ID
-        # ----------------------------------
-
-        match_id = match.get(
-            "match_id"
-        )
-
-        # ----------------------------------
-        # TEAMS
-        # ----------------------------------
-
-        first_team = match.get(
-            "first_team",
-            {}
-        )
-
-        second_team = match.get(
-            "second_team",
-            {}
-        )
-
-        first_name = first_team.get(
-            "full_name",
-            first_team.get(
-                "name",
-                "Team 1"
-            )
-        )
-
-        second_name = second_team.get(
-            "full_name",
-            second_team.get(
-                "name",
-                "Team 2"
-            )
-        )
-
-        # ----------------------------------
-        # SCORES
-        # ----------------------------------
-
-        first_score = first_team.get(
-            "score",
-            "Score unavailable"
-        )
-
-        second_score = second_team.get(
-            "score",
-            "Score unavailable"
-        )
-
-        # ----------------------------------
-        # MATCH INFORMATION
-        # ----------------------------------
-
-        title = match.get(
-            "title",
-            f"{first_name} vs {second_name}"
-        )
-
-        venue = match.get(
-            "venue",
-            "Venue unavailable"
-        )
-
-        status = match.get(
-            "status_detail",
-            match.get(
-                "short_status",
-                "Status unavailable"
-            )
-        )
-
-        # ==================================
-        # MATCH CARD
-        # ==================================
-
-        with st.container(border=True):
-
-            st.subheader(
-                f"🏏 {title}"
+        # If we already selected a match earlier,
+        # still show it from session state.
+        if "selected_match" not in st.session_state:
+            st.info(
+                "The CricketPulse interface is working correctly. "
+                "Live data will return when the API becomes available again."
             )
 
-            col1, col2 = st.columns(2)
+    elif status_code != 200:
 
-            with col1:
+        st.error(f"❌ API Error: {status_code}")
 
-                st.markdown(
-                    f"### {first_name}"
+    else:
+
+        matches = data.get("data", [])
+
+        # --------------------------------------
+        # NO LIVE MATCHES
+        # --------------------------------------
+
+        if not matches:
+
+            st.warning("No live matches available right now.")
+
+        else:
+
+            st.success(
+                f"🟢 Live data updated — {len(matches)} matches found"
+            )
+
+            # ----------------------------------
+            # DISPLAY MATCHES
+            # ----------------------------------
+
+            for match in matches:
+
+                match_id = match.get("match_id")
+
+                first_team = match.get(
+                    "first_team",
+                    {}
                 )
 
-                st.markdown(
-                    f"## {first_score}"
+                second_team = match.get(
+                    "second_team",
+                    {}
                 )
 
-            with col2:
-
-                st.markdown(
-                    f"### {second_name}"
+                first_name = first_team.get(
+                    "full_name",
+                    first_team.get(
+                        "name",
+                        "Team 1"
+                    )
                 )
 
-                st.markdown(
-                    f"## {second_score}"
+                second_name = second_team.get(
+                    "full_name",
+                    second_team.get(
+                        "name",
+                        "Team 2"
+                    )
                 )
 
-            st.write(
-                f"📍 **Venue:** {venue}"
-            )
+                first_score = first_team.get(
+                    "score",
+                    "Score unavailable"
+                )
 
-            st.write(
-                f"🟢 **Status:** {status}"
-            )
+                second_score = second_team.get(
+                    "score",
+                    "Score unavailable"
+                )
 
-            # ==================================
-            # VIEW MATCH
-            # ==================================
+                title = match.get(
+                    "title",
+                    f"{first_name} vs {second_name}"
+                )
 
-            if st.button(
-                "📊 View Match",
-                key=f"view_{match_id}"
-            ):
+                venue = match.get(
+                    "venue",
+                    "Venue unavailable"
+                )
 
-                st.session_state[
-                    "selected_match"
-                ] = match
+                status = match.get(
+                    "status_detail",
+                    match.get(
+                        "short_status",
+                        "Status unavailable"
+                    )
+                )
 
-                st.session_state[
-                    "selected_match_id"
-                ] = match_id
+                # ----------------------------------
+                # MATCH CARD
+                # ----------------------------------
+
+                with st.container(border=True):
+
+                    st.subheader(
+                        f"🏏 {title}"
+                    )
+
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+
+                        st.markdown(
+                            f"### {first_name}"
+                        )
+
+                        st.markdown(
+                            f"## {first_score}"
+                        )
+
+                    with col2:
+
+                        st.markdown(
+                            f"### {second_name}"
+                        )
+
+                        st.markdown(
+                            f"## {second_score}"
+                        )
+
+                    st.write(
+                        f"📍 **Venue:** {venue}"
+                    )
+
+                    st.write(
+                        f"🟢 **Status:** {status}"
+                    )
+
+                    # ----------------------------------
+                    # CLICKABLE MATCH
+                    # ----------------------------------
+
+                    if st.button(
+                        "📊 View Match",
+                        key=f"view_{match_id}"
+                    ):
+
+                        st.session_state[
+                            "selected_match"
+                        ] = match
+
+                        st.session_state[
+                            "selected_match_id"
+                        ] = match_id
 
 
-# ==========================================
-# API CONNECTION ERROR
-# ==========================================
-
-except requests.RequestException as e:
+except KeyError:
 
     st.error(
-        f"❌ Could not connect to CricLive: {e}"
+        "❌ CRICLIVE_API_KEY is missing from Streamlit Secrets."
+    )
+
+except requests.exceptions.RequestException as e:
+
+    st.error(
+        f"❌ Could not connect to CricLive API: {e}"
     )
 
 except Exception as e:
@@ -275,17 +249,15 @@ except Exception as e:
 
 if "selected_match" in st.session_state:
 
-    selected = st.session_state[
-        "selected_match"
-    ]
-
-    selected_match_id = st.session_state[
-        "selected_match_id"
-    ]
+    selected = st.session_state["selected_match"]
 
     st.divider()
 
-    st.header("🏏 Selected Match")
+    st.header("🏏 Match Center")
+
+    # --------------------------------------
+    # MATCH INFORMATION
+    # --------------------------------------
 
     st.subheader(
         selected.get(
@@ -294,16 +266,147 @@ if "selected_match" in st.session_state:
         )
     )
 
-    st.write(
-        f"**Match ID:** {selected_match_id}"
+    venue = selected.get(
+        "venue",
+        "Venue unavailable"
     )
 
-    st.success(
-        "✅ Match selected successfully!"
+    status = selected.get(
+        "status_detail",
+        selected.get(
+            "short_status",
+            "Status unavailable"
+        )
+    )
+
+    st.write(
+        f"📍 **Venue:** {venue}"
+    )
+
+    st.write(
+        f"🟢 **Status:** {status}"
+    )
+
+    st.divider()
+
+    # --------------------------------------
+    # TEAMS
+    # --------------------------------------
+
+    first_team = selected.get(
+        "first_team",
+        {}
+    )
+
+    second_team = selected.get(
+        "second_team",
+        {}
+    )
+
+    first_name = first_team.get(
+        "full_name",
+        first_team.get(
+            "name",
+            "Team 1"
+        )
+    )
+
+    second_name = second_team.get(
+        "full_name",
+        second_team.get(
+            "name",
+            "Team 2"
+        )
+    )
+
+    first_score = first_team.get(
+        "score",
+        "Score unavailable"
+    )
+
+    second_score = second_team.get(
+        "score",
+        "Score unavailable"
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.markdown(
+            f"### {first_name}"
+        )
+
+        st.markdown(
+            f"# {first_score}"
+        )
+
+    with col2:
+
+        st.markdown(
+            f"### {second_name}"
+        )
+
+        st.markdown(
+            f"# {second_score}"
+        )
+
+    st.divider()
+
+    # --------------------------------------
+    # MATCH ID
+    # --------------------------------------
+
+    match_id = selected.get(
+        "match_id"
+    )
+
+    st.caption(
+        f"Match ID: {match_id}"
+    )
+
+    # --------------------------------------
+    # AVAILABLE DATA
+    # --------------------------------------
+
+    st.subheader("📊 Match Information")
+
+    format_type = selected.get(
+        "format",
+        "Not available"
+    )
+
+    match_type = selected.get(
+        "match_type",
+        "Not available"
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.write(
+            f"**Format:** {format_type}"
+        )
+
+    with col2:
+
+        st.write(
+            f"**Type:** {match_type}"
+        )
+
+    # --------------------------------------
+    # FUTURE SCORECARD AREA
+    # --------------------------------------
+
+    st.divider()
+
+    st.subheader(
+        "🏏 Detailed Scorecard"
     )
 
     st.info(
-        "Detailed match information will be "
-        "connected after we verify the correct "
-        "CricLive endpoint."
+        "The detailed scorecard will show "
+        "batters, runs, balls, fours, sixes, "
+        "strike rate, bowlers, wickets and economy."
     )
