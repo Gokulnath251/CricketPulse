@@ -34,13 +34,16 @@ try:
     if response.status_code != 200:
         st.error(f"❌ API Error: {response.status_code}")
         st.stop()
+data = response.json()
 
-    data = response.json()
-    matches = data.get("data", [])
+st.write("🔍 API Response:")
+st.json(data)
 
-    if not matches:
-        st.warning("No matches available right now.")
-        st.stop()
+matches = data.get("data", [])
+
+if not matches:
+    st.warning("No matches available right now.")
+    st.stop()
 
     st.success(
         f"🟢 Live data updated — {len(matches)} matches found"
